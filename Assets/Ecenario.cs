@@ -3,9 +3,18 @@ using UnityEngine;
 
 public class Ecenario : MonoBehaviour
 {
-    [Header("Referencias")]
-    [Tooltip("Arrastra aquí el objeto del Jugador")]
+    [Header("Referencias y Jugador")]
+    [Tooltip("Arrastra aquí el objeto o Prefab del Jugador")]
     public Transform jugador;
+
+    [Tooltip("Coloca automáticamente al jugador al inicio de la calle frente a la cámara")]
+    public bool colocarJugadorEnInicio = true;
+
+    [Tooltip("Altura a la que aparece el jugador sobre la calle")]
+    public float alturaJugador = 0.5f;
+
+    [Tooltip("Giro del personaje por si aparece mirando de costado o hacia atrás")]
+    public Vector3 rotacionJugador = Vector3.zero;
 
     [Header("Ajuste con la Cámara")]
     [Tooltip("Crea el escenario justo enfrente de la Main Camera")]
@@ -17,9 +26,8 @@ public class Ecenario : MonoBehaviour
     [Tooltip("Altura del suelo (Eje Y)")]
     public float alturaSuelo = 0f;
 
-    [Header("Prefabs del Escenario")]
+    [Header("Prefabs de Calle y Edificios")]
     public GameObject[] prefabsCalles;
-    public GameObject[] prefabsObstaculos;
     public GameObject[] prefabsEdificios;
 
     [Header("Configuración de Generación")]
@@ -34,27 +42,22 @@ public class Ecenario : MonoBehaviour
     [Tooltip("Cuánto debe avanzar el jugador para que se destruya el suelo que dejó atrás")]
     public float distanciaParaDestruir = 15f;
 
-    [Header("Rotaciones (Para alinear tus Assets)")]
+    [Header("Rotaciones y Distancias")]
     public Vector3 rotacionCalle = new Vector3(0f, 90f, 0f);
     public Vector3 rotacionEdificioDerecho = new Vector3(0f, 0f, 0f);
     public Vector3 rotacionEdificioIzquierdo = new Vector3(0f, 180f, 0f);
-    public Vector3 rotacionObstaculo = new Vector3(0f, 90f, 0f);
-
-    [Header("Carriles y Distancias")]
-    public float[] posicionesCarriles = new float[] { -2f, 0f, 2f };
     public float distanciaEdificios = 8f;
 
-    [Range(0f, 1f)]
-    public float probabilidadObstaculo = 0.7f;
+    // Variables públicas ocultas para que Obstaculos se sincronice automáticamente
+    [HideInInspector] public Vector3 puntoOrigen = Vector3.zero;
+    [HideInInspector] public Transform objetivoAvance;
+    [HideInInspector] public Vector3 posicionInicialObjetivo = Vector3.zero;
 
     private Queue<GameObject> suelosActivos = new Queue<GameObject>();
     private float posicionSiguienteSuelo = 0f;
     private float posicionPrimerSuelo = 0f;
-    private Vector3 puntoOrigen = Vector3.zero;
-    private Vector3 posicionInicialObjetivo = Vector3.zero;
-    private Transform objetivoAvance;
 
-    void Start()
+    void Awake()
     {
         if (prefabsCalles == null || prefabsCalles.Length == 0)
         {
@@ -63,10 +66,7 @@ public class Ecenario : MonoBehaviour
             return;
         }
 
-        // Determinamos quién avanza (el jugador o la cámara si no hay jugador asignado)
-        objetivoAvance = jugador != null ? jugador : (Camera.main != null ? Camera.main.transform : null);
-
-        // Posicionar el inicio del camino frente a la cámara principal
+        // 1. Calcular el inicio del camino frente a la cámara principal
         if (aparecerFrenteACamara && Camera.main != null)
         {
             Transform cam = Camera.main.transform;
@@ -84,17 +84,36 @@ public class Ecenario : MonoBehaviour
             puntoOrigen = transform.position;
         }
 
-        // Guardamos dónde empezó el jugador para no destruir calles antes de que se mueva
+        // 2. Generar todos los tramos iniciales de calle y edificios
+        for (int i = 0; i < tramosEnPantalla; i++)
+        {
+            CrearNuevoSuelo();
+        }
+
+        // 3. Crear o posicionar al Jugador sobre el primer tramo de calle
+        if (jugador != null)
+        {
+            Vector3 posInicioJugador = puntoOrigen + (Vector3.up * alturaJugador);
+            Quaternion rotInicioJugador = Quaternion.LookRotation(direccionAvance) * Quaternion.Euler(rotacionJugador);
+
+            if (!jugador.gameObject.scene.IsValid())
+            {
+                jugador = Instantiate(jugador, posInicioJugador, rotInicioJugador);
+            }
+            else if (colocarJugadorEnInicio)
+            {
+                jugador.position = posInicioJugador;
+                jugador.rotation = rotInicioJugador;
+            }
+
+            jugador.gameObject.SetActive(true);
+        }
+
+        // 4. Guardar referencia de avance
+        objetivoAvance = jugador != null ? jugador : (Camera.main != null ? Camera.main.transform : null);
         if (objetivoAvance != null)
         {
             posicionInicialObjetivo = objetivoAvance.position;
-        }
-
-        // Generamos todos los tramos iniciales en fila
-        for (int i = 0; i < tramosEnPantalla; i++)
-        {
-            bool generarObstaculos = i >= 2;
-            CrearNuevoSuelo(generarObstaculos);
         }
     }
 
@@ -102,19 +121,17 @@ public class Ecenario : MonoBehaviour
     {
         if (objetivoAvance == null) return;
 
-        // Medimos cuánto se ha movido realmente desde que empezó el juego
         float distanciaRecorrida = Vector3.Dot(objetivoAvance.position - posicionInicialObjetivo, direccionAvance);
 
-        // Solo destruye el primer tramo cuando el jugador realmente lo haya pasado
         if (distanciaRecorrida > posicionPrimerSuelo + distanciaParaDestruir)
         {
-            CrearNuevoSuelo(true);
+            CrearNuevoSuelo();
             DestruirSueloViejo();
             posicionPrimerSuelo += longitudCalle;
         }
     }
 
-    void CrearNuevoSuelo(bool conObstaculos)
+    void CrearNuevoSuelo()
     {
         Vector3 posicionSpawn = puntoOrigen + (direccionAvance * posicionSiguienteSuelo);
 
@@ -125,35 +142,23 @@ public class Ecenario : MonoBehaviour
         // 1. Instanciar la calle
         GameObject calleElegida = prefabsCalles[Random.Range(0, prefabsCalles.Length)];
         Quaternion rotCalle = Quaternion.LookRotation(direccionAvance) * Quaternion.Euler(rotacionCalle);
-        Instantiate(calleElegida, posicionSpawn, rotCalle, contenedorTramo.transform);
+        GameObject nuevaCalle = Instantiate(calleElegida, posicionSpawn, rotCalle, contenedorTramo.transform);
 
-        // Vector hacia la derecha de la calle
+        if (nuevaCalle.GetComponentInChildren<Collider>() == null)
+        {
+            nuevaCalle.AddComponent<BoxCollider>();
+        }
+
         Vector3 vectorLateral = Vector3.Cross(Vector3.up, direccionAvance).normalized;
 
         // 2. Generar edificios a ambos lados
         if (prefabsEdificios != null && prefabsEdificios.Length > 0)
         {
-            // Lado derecho
             Vector3 posDer = posicionSpawn + (vectorLateral * distanciaEdificios);
             InstanciarEdificio(contenedorTramo.transform, posDer, rotacionEdificioDerecho);
 
-            // Lado izquierdo
             Vector3 posIzq = posicionSpawn - (vectorLateral * distanciaEdificios);
             InstanciarEdificio(contenedorTramo.transform, posIzq, rotacionEdificioIzquierdo);
-        }
-
-        // 3. Generar obstáculo en uno de los 3 carriles
-        if (conObstaculos && prefabsObstaculos != null && prefabsObstaculos.Length > 0)
-        {
-            if (Random.value <= probabilidadObstaculo)
-            {
-                float carrilElegido = posicionesCarriles[Random.Range(0, posicionesCarriles.Length)];
-                Vector3 posObstaculo = posicionSpawn + (vectorLateral * carrilElegido);
-
-                GameObject prefabObs = prefabsObstaculos[Random.Range(0, prefabsObstaculos.Length)];
-                Quaternion rotObs = Quaternion.LookRotation(direccionAvance) * Quaternion.Euler(rotacionObstaculo);
-                Instantiate(prefabObs, posObstaculo, rotObs, contenedorTramo.transform);
-            }
         }
 
         suelosActivos.Enqueue(contenedorTramo);

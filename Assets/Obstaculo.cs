@@ -93,7 +93,6 @@ public class Obstaculos : MonoBehaviour
 
         for (int i = 0; i < escenario.tramosEnPantalla; i++)
         {
-            // Solo permite crear autos cuando ya superó la distancia segura del inicio (ni en i=0 ni en i=1)
             bool fueraDeZonaSegura = (i >= 2) && (posicionSiguienteObstaculo >= distanciaSeguraInicio);
             CrearFilaObstaculo(fueraDeZonaSegura);
         }
@@ -101,7 +100,6 @@ public class Obstaculos : MonoBehaviour
 
     void Update()
     {
-        // Si el jugador perdió (juego en pausa) y presiona ESPACIO, reinicia la partida
         if (Time.timeScale == 0f)
         {
             if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
@@ -137,7 +135,6 @@ public class Obstaculos : MonoBehaviour
         contenedorFila.transform.position = posicionBase;
         contenedorFila.transform.parent = transform;
 
-        // Además verifica que nunca se cree un auto encima de donde está el jugador actualmente
         if (activo && escenario.jugador != null)
         {
             float distanciaAlJugador = Vector3.Distance(
@@ -152,7 +149,6 @@ public class Obstaculos : MonoBehaviour
 
         if (activo && Random.value <= probabilidadAparicion)
         {
-            // Elegir al azar entre -1, 0 y 1 sin repetir el anterior
             int carril = Random.Range(-1, 2);
             if (carril == ultimoCarrilElegido)
             {
@@ -169,6 +165,7 @@ public class Obstaculos : MonoBehaviour
             GameObject nuevoObs = Instantiate(prefabObs, posObstaculo, rotObs, contenedorFila.transform);
             nuevoObs.name = "Obstaculo_" + prefabObs.name + "_Carril_" + carril;
 
+            // Asegurar que tenga collider para que el Jugador pueda chocar con él
             if (nuevoObs.GetComponentInChildren<Collider>() == null)
             {
                 MeshFilter[] mallas = nuevoObs.GetComponentsInChildren<MeshFilter>();
@@ -184,11 +181,6 @@ public class Obstaculos : MonoBehaviour
                     nuevoObs.AddComponent<BoxCollider>();
                 }
             }
-
-            DetectorObstaculo detector = nuevoObs.AddComponent<DetectorObstaculo>();
-            detector.generador = this;
-            detector.carrilAsignado = carril;
-            detector.posicionCentroCalle = posicionBase;
         }
 
         obstaculosActivos.Enqueue(contenedorFila);
@@ -209,7 +201,7 @@ public class Obstaculos : MonoBehaviour
             altura = alturaCarril0;
             rotacion = rotacionCarril0;
         }
-        else // carril == 1
+        else
         {
             posLateral = posicionCarril1;
             altura = alturaCarril1;
@@ -217,70 +209,12 @@ public class Obstaculos : MonoBehaviour
         }
     }
 
-    public Vector3 ObtenerVectorLateral() => vectorLateralReal;
-    public Vector3 ObtenerDireccionReal() => direccionReal;
-
     void DestruirObstaculoViejo()
     {
         if (obstaculosActivos.Count > 0)
         {
             GameObject viejo = obstaculosActivos.Dequeue();
             Destroy(viejo);
-        }
-    }
-}
-
-public class DetectorObstaculo : MonoBehaviour
-{
-    public Obstaculos generador;
-    public int carrilAsignado; // -1, 0 o 1
-    public Vector3 posicionCentroCalle;
-
-    void Update()
-    {
-        if (generador != null)
-        {
-            generador.ObtenerDatosDeCarril(carrilAsignado, out float posLateral, out float altura, out Vector3 rotExtra);
-
-            transform.position = posicionCentroCalle
-                + (generador.ObtenerVectorLateral() * posLateral)
-                + (Vector3.up * altura);
-
-            transform.rotation = Quaternion.LookRotation(generador.ObtenerDireccionReal()) * Quaternion.Euler(rotExtra);
-        }
-    }
-
-    void OnCollisionEnter(Collision collision)
-    {
-        VerificarChoque(collision.gameObject);
-    }
-
-    void OnTriggerEnter(Collider other)
-    {
-        VerificarChoque(other.gameObject);
-    }
-
-    void VerificarChoque(GameObject obj)
-    {
-        // Evita perder por error en el primer instante en que carga la escena
-        if (Time.timeSinceLevelLoad < 0.4f) return;
-
-        Jugador scriptJugador = obj.GetComponentInParent<Jugador>();
-        if (scriptJugador != null)
-        {
-            scriptJugador.SendMessage("MostrarMenuDerrota", SendMessageOptions.DontRequireReceiver);
-            Debug.Log("¡Perdiste! Presiona ESPACIO para volver a intentarlo.");
-            return;
-        }
-
-        if (generador != null && generador.escenario != null && generador.escenario.jugador != null)
-        {
-            Transform jug = generador.escenario.jugador;
-            if (obj.transform == jug || obj.transform.IsChildOf(jug))
-            {
-                Debug.Log("¡Perdiste! Presiona ESPACIO para volver a intentarlo.");
-                Time.timeScale = 0f;
-            }
         }
     }
 }

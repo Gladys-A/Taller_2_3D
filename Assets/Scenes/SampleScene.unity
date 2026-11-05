@@ -1172,9 +1172,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Jugador
   velocidadCorrer: 1.5
+  aceleracion: 0.2
+  velocidadMaxima: 25
   velocidadLateral: 2
   limiteLateral: 0.6
-  fuerzaSalto: 5
+  fuerzaSalto: 4.5
   gravedadExtra: 0
   prefabBala: {fileID: 0}
   puntoDisparo: {fileID: 0}
@@ -1381,7 +1383,7 @@ MonoBehaviour:
   posicionCarril1: 0.5
   alturaCarril1: 0.15
   rotacionCarril1: {x: 0, y: 0, z: 0}
-  distanciaSeguraInicio: 10
+  distanciaSeguraInicio: 5
   usarLongitudDeLaCalle: 1
   distanciaEntreObstaculos: 5
   probabilidadAparicion: 0.85

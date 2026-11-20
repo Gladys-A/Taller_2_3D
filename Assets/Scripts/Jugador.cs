@@ -1,67 +1,50 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using UnityEngine.InputSystem; 
+using UnityEngine.InputSystem;
+using TMPro;
 
 public class Jugador : MonoBehaviour
 {
     [Header("Movimiento")]
-    [Tooltip("Velocidad inicial a la que corre hacia adelante")]
     public float velocidadCorrer = 8f;
-
-    [Tooltip("Cuánto aumenta la velocidad de carrera por cada segundo")]
     public float aceleracion = 0.2f;
-
-    [Tooltip("Límite de velocidad para no perder el control")]
     public float velocidadMaxima = 25f;
-
-    [Tooltip("Velocidad para moverse a la izquierda (A) y derecha (D)")]
     public float velocidadLateral = 6f;
-
-    [Tooltip("Límite hacia los lados para no atravesar los edificios")]
     public float limiteLateral = 3.5f;
 
-    [Header("Salto (Para pasar sobre vehículos)")]
-    [Tooltip("Fuerza del salto hacia arriba (Tecla Espacio o W)")]
+    [Header("Salto")]
     public float fuerzaSalto = 9f;
-
-    [Tooltip("Gravedad extra para que el salto se sienta rápido y fluido")]
     public float gravedadExtra = 15f;
 
-        [Header("Disparo (Tecla F)")]
-    [Tooltip("Altura exacta sobre el suelo a la que viaja la bala (prueba con 0.4 o 0.5)")]
-    public float alturaBala = 0.45f; // <--- AJUSTA ESTE VALOR EN EL INSPECTOR
-
-    [Tooltip("Intervalo mínimo en segundos entre disparos")]
+    [Header("Disparo (Tecla F)")]
+    public float alturaBala = 0.45f;
     public float intervaloMinimoDisparo = 0.5f;
-
-    [Tooltip("Prefab de la bala")]
     public GameObject prefabBala;
-
-    [Tooltip("Punto desde donde sale la bala (opcional)")]
     public Transform puntoDisparo;
-
-    [Tooltip("Velocidad adicional de la bala")]
     public float velocidadBala = 25f;
 
-    [Header("Monedas y UI")]
-    [Tooltip("Cantidad de monedas recolectadas")]
-    public int monedas = 0;
+    [Header("Puntajes y UI")]
+    public TextMeshProUGUI textoMonedas;
+    public TextMeshProUGUI textoPuntaje;
+    public float factorPuntosPorMetro = 1f;
 
-    [Tooltip("Arrastra aquí el Panel o Canvas de tu Menú de Derrota")]
+    [Header("Menú de Derrota")]
     public GameObject menuDerrota;
 
     [Header("Cámara")]
-    [Tooltip("Hace que la Main Camera avance siguiendo al jugador")]
     public bool camaraSigueAlJugador = true;
 
-    // Componentes del jugador
+    // Componentes internos
     private Rigidbody rb;
     private Animator anim;
 
-    // Estados internos
+    // Estados
     private bool enElSuelo = true;
     private bool juegoTerminado = false;
-    private float tiempoSiguienteDisparo = 0f; // Control del intervalo de disparo
+    private float tiempoSiguienteDisparo = 0f;
+
+    private int monedas = 0;
+    private int puntajeDistancia = 0;
 
     private Vector3 direccionAdelante;
     private Vector3 direccionDerecha;
@@ -69,6 +52,7 @@ public class Jugador : MonoBehaviour
     private float desplazamientoLateralActual = 0f;
     private Vector3 distanciaCamara;
 
+    
     void Start()
     {
         rb = GetComponent<Rigidbody>();
@@ -76,17 +60,11 @@ public class Jugador : MonoBehaviour
         rb.interpolation = RigidbodyInterpolation.Interpolate;
 
         anim = GetComponentInChildren<Animator>();
-        if (anim != null)
-        {
-            anim.enabled = true;
-        }
+        if (anim != null) anim.enabled = true;
 
-        if (menuDerrota != null)
-        {
-            menuDerrota.SetActive(false);
-        }
+        if (menuDerrota != null) menuDerrota.SetActive(false);
 
-        Time.timeScale = 1f;
+        Time.timeScale = 1f; // Iniciar tiempo normal
 
         if (Camera.main != null)
         {
@@ -102,26 +80,29 @@ public class Jugador : MonoBehaviour
 
         direccionDerecha = Vector3.Cross(Vector3.up, direccionAdelante).normalized;
         puntoCentralInicio = transform.position;
+
+        monedas = 0;
+        puntajeDistancia = 0;
+        ActualizarUIMonedas();
+        ActualizarUIPuntaje();
     }
 
-        void Update()
+    void Update()
     {
         var teclado = Keyboard.current;
         if (teclado == null) return;
 
-        // SI EL JUEGO TERMINÓ: Permitir reiniciar con las teclas R, Espacio o Enter
+        // SI EL JUEGO TERMINÓ: Todo queda quieto hasta presionar ESPACIO
         if (juegoTerminado)
         {
-            if (teclado.rKey.wasPressedThisFrame || 
-                teclado.spaceKey.wasPressedThisFrame || 
-                teclado.enterKey.wasPressedThisFrame)
+            if (teclado.spaceKey.wasPressedThisFrame)
             {
                 ReiniciarJuego();
             }
-            return; // No ejecutar movimiento si el juego ya terminó
+            return; // No permite moverse mientras está congelado
         }
 
-        // 1. Movimiento horizontal con teclas "A" y "D"
+        // 1. Movimiento horizontal (A y D)
         float inputHorizontal = 0f;
         if (teclado.aKey.isPressed) inputHorizontal = -1f;
         if (teclado.dKey.isPressed) inputHorizontal = 1f;
@@ -129,19 +110,21 @@ public class Jugador : MonoBehaviour
         desplazamientoLateralActual += inputHorizontal * velocidadLateral * Time.deltaTime;
         desplazamientoLateralActual = Mathf.Clamp(desplazamientoLateralActual, -limiteLateral, limiteLateral);
 
-        // 2. Saltar hacia arriba (Tecla Espacio o W)
+        // 2. Salto (Espacio o W)
         if ((teclado.spaceKey.wasPressedThisFrame || teclado.wKey.wasPressedThisFrame) && enElSuelo)
         {
             rb.velocity = new Vector3(rb.velocity.x, fuerzaSalto, rb.velocity.z);
             enElSuelo = false;
         }
 
-        // 3. Disparar proyectiles con la tecla "F"
+        // 3. Disparar con "F" (cada 0.5s)
         if (teclado.fKey.wasPressedThisFrame && Time.time >= tiempoSiguienteDisparo)
         {
             Disparar();
             tiempoSiguienteDisparo = Time.time + intervaloMinimoDisparo;
         }
+
+        CalcularPuntajeDistancia();
     }
 
     void FixedUpdate()
@@ -183,9 +166,28 @@ public class Jugador : MonoBehaviour
         }
     }
 
-        void Disparar()
+    void CalcularPuntajeDistancia()
     {
-        // Si no tienes puntoDisparo asignado, la bala sale a la altura exacta de 'alturaBala'
+        float distanciaAvanzada = Vector3.Dot(transform.position - puntoCentralInicio, direccionAdelante);
+        if (distanciaAvanzada > 0)
+        {
+            puntajeDistancia = Mathf.FloorToInt(distanciaAvanzada * factorPuntosPorMetro);
+            ActualizarUIPuntaje();
+        }
+    }
+
+    void ActualizarUIMonedas()
+    {
+        if (textoMonedas != null) textoMonedas.text = $"🪙 Monedas: {monedas}";
+    }
+
+    void ActualizarUIPuntaje()
+    {
+        if (textoPuntaje != null) textoPuntaje.text = $"🚩 Distancia: {puntajeDistancia} m";
+    }
+
+    void Disparar()
+    {
         Vector3 posSalida = puntoDisparo != null
             ? puntoDisparo.position
             : new Vector3(transform.position.x, alturaBala, transform.position.z) + (direccionAdelante * 0.8f);
@@ -200,25 +202,21 @@ public class Jugador : MonoBehaviour
         {
             bala = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             bala.transform.position = posSalida;
-            bala.transform.localScale = Vector3.one * 0.4f; // Bala un poco más gruesa para asegurar impacto
+            bala.transform.localScale = Vector3.one * 0.4f;
             bala.GetComponent<Renderer>().material.color = Color.yellow;
         }
 
-        // Rigidbody SIN GRAVEDAD
         Rigidbody rbBala = bala.GetComponent<Rigidbody>();
         if (rbBala == null) rbBala = bala.AddComponent<Rigidbody>();
         rbBala.useGravity = false;
 
-        // Velocidad hacia adelante
         rbBala.velocity = direccionAdelante * (velocidadCorrer + velocidadBala);
 
-        // Script de impacto
         if (bala.GetComponent<Proyectil>() == null)
         {
             bala.AddComponent<Proyectil>();
         }
 
-        // Ignorar colisión con el jugador
         Collider colBala = bala.GetComponent<Collider>();
         Collider colJugador = GetComponent<Collider>();
         if (colBala != null && colJugador != null)
@@ -228,6 +226,7 @@ public class Jugador : MonoBehaviour
 
         Destroy(bala, 3f);
     }
+
     void OnCollisionEnter(Collision collision)
     {
         foreach (ContactPoint contacto in collision.contacts)
@@ -252,49 +251,50 @@ public class Jugador : MonoBehaviour
         string nombre = objeto.name.ToLower();
         string etiqueta = objeto.tag;
 
-        // Moneda
+        // Monedas
         if (etiqueta == "Moneda" || etiqueta == "Coin" || nombre.Contains("moneda") || nombre.Contains("coin"))
         {
             monedas++;
-            Debug.Log("¡Moneda recolectada! Total: " + monedas);
+            ActualizarUIMonedas();
             Destroy(objeto);
             return;
         }
 
-        // Obstáculo o dinosaurio que mata al jugador
+        // Obstáculo o dinosaurio
         if (etiqueta == "Obstaculo" || etiqueta == "Dinosaurio" || etiqueta == "Enemy" ||
-            nombre.Contains("car") ||
-            nombre.Contains("dino"))
+            nombre.Contains("car") || nombre.Contains("auto") || nombre.Contains("vehic") ||
+            nombre.Contains("dino") || nombre.Contains("obstac") || nombre.Contains("police") || nombre.Contains("taxi"))
         {
             MostrarMenuDerrota();
         }
     }
 
-        void MostrarMenuDerrota()
+    // CONGELA TODO EL JUEGO AL CHOCAR
+    public void MostrarMenuDerrota()
     {
         if (juegoTerminado) return;
         juegoTerminado = true;
 
-        Debug.Log("¡Has chocado! Fin del juego. Presiona 'R' o haz clic para reiniciar.");
+        Debug.Log("¡Juego terminado! Todo congelado. Presiona 'ESPACIO' para reiniciar.");
 
+        // Detener velocidad física
         rb.velocity = Vector3.zero;
         rb.isKinematic = true;
 
-        // Liberar y mostrar el cursor del ratón para poder hacer clic en el botón
-        Cursor.visible = true;
-        Cursor.lockState = CursorLockMode.None;
+        // Pausar animación del jugador si la tiene
+        if (anim != null) anim.speed = 0f;
 
-        if (menuDerrota != null)
-        {
-            menuDerrota.SetActive(true);
-        }
+        // Mostrar menú si existe
+        if (menuDerrota != null) menuDerrota.SetActive(true);
 
-        Time.timeScale = 0f; // Pausa el juego
+        // CONGELA ABSOLUTAMENTE TODO EL MUNDO (Dinosaurios, autos, física)
+        Time.timeScale = 0f;
     }
 
     public void ReiniciarJuego()
     {
-        Time.timeScale = 1f; // MUY IMPORTANTE: reactivar el tiempo antes de recargar
+        // Reanudar el tiempo antes de recargar
+        Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 }

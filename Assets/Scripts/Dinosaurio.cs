@@ -1,27 +1,38 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 public class Dinosaurio : MonoBehaviour
 {
     [Header("Estadísticas")]
-    [Tooltip("Cantidad de disparos que aguanta este dinosaurio")]
     public int vida = 1;
     public float velocidad = 8f;
-    public float limiteZDestruccion = -15f;
+
+    private Transform jugador;
+
+    void Start()
+    {
+        // Busca al jugador directamente por su script (no depende de ningún Tag)
+        Jugador jugadorComp = FindObjectOfType<Jugador>();
+        if (jugadorComp != null)
+        {
+            jugador = jugadorComp.transform;
+        }
+
+        // Seguro largo de 45 segundos por si acaso, nunca se borrará en tu cara
+        Destroy(gameObject, 45f);
+    }
 
     void Update()
     {
-        // Avanza en línea recta hacia la pantalla (-Z)
+        // Avanza en línea recta hacia el jugador (-Z)
         transform.Translate(Vector3.back * velocidad * Time.deltaTime, Space.World);
 
-        // Se destruye al pasar la pantalla
-        if (transform.position.z < limiteZDestruccion)
+        // SOLO se destruye si ya pasó al jugador y quedó 15 metros ATRÁS
+        if (jugador != null && transform.position.z < (jugador.position.z - 15f))
         {
             Destroy(gameObject);
         }
     }
 
-    // Método que llama el Proyectil cuando le dispara al dinosaurio
     public void RecibirDanio(int danio = 1)
     {
         vida -= danio;
@@ -29,7 +40,7 @@ public class Dinosaurio : MonoBehaviour
         if (vida <= 0)
         {
             Debug.Log($"{gameObject.name} eliminado!");
-            Destroy(gameObject); // El dinosaurio muere y desaparece
+            Destroy(gameObject);
         }
     }
 
@@ -45,11 +56,10 @@ public class Dinosaurio : MonoBehaviour
 
     private void ProcesarImpacto(GameObject objetoQueToco)
     {
-        // Solo revisa si chocó con el Jugador (usando el componente para que no falle ningún tag)
-        if (objetoQueToco.CompareTag("Player") || objetoQueToco.GetComponent<Jugador>() != null)
+        Jugador jugadorComp = objetoQueToco.GetComponent<Jugador>() ?? objetoQueToco.GetComponentInParent<Jugador>();
+        if (jugadorComp != null)
         {
-            Debug.Log("¡Dinosaurio embistió al jugador! Reiniciando partida...");
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            jugadorComp.MostrarMenuDerrota();
         }
     }
 }

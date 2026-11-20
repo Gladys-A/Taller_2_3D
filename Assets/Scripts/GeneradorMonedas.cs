@@ -102,8 +102,6 @@ public class GeneradorMonedas : MonoBehaviour
         }
         return true;
     }
-
-    // Método genérico <T>: ahora puede barajar listas de int, float, o cualquier tipo sin dar error
     private void BarajarLista<T>(List<T> lista)
     {
         for (int i = 0; i < lista.Count; i++)
